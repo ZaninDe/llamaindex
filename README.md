@@ -1,12 +1,44 @@
-This is a [LlamaIndex](https://www.llamaindex.ai/) project bootstrapped with [`create-llama`](https://github.com/run-llama/LlamaIndexTS/tree/main/packages/create-llama).
+This is a [LlamaIndex](https://www.llamaindex.ai/) project using [Express](https://expressjs.com/) bootstrapped with [`create-llama`](https://github.com/run-llama/LlamaIndexTS/tree/main/packages/create-llama).
 
 ## Getting Started
 
-First, startup the backend as described in the [backend README](./backend/README.md).
+First, install the dependencies:
 
-Second, run the development server of the frontend as described in the [frontend README](./frontend/README.md).
+```
+npm install
+```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Second, run the development server:
+
+```
+npm run dev
+```
+
+Then call the express API endpoint `/api/chat` to see the result:
+
+```
+curl --location 'localhost:8000/api/chat' \
+--header 'Content-Type: text/plain' \
+--data '{ "messages": [{ "role": "user", "content": "Hello" }] }'
+```
+
+You can start editing the API by modifying `src/controllers/chat.controller.ts`. The endpoint auto-updates as you save the file.
+
+## Production
+
+First, build the project:
+
+```
+npm run build
+```
+
+You can then run the production server:
+
+```
+NODE_ENV=production npm run start
+```
+
+> Note that the `NODE_ENV` environment variable is set to `production`. This disables CORS for all origins.
 
 ## Learn More
 

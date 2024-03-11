@@ -16,7 +16,6 @@ import {
   QDRANT_FILES_DIR
 } from "./constants.mjs";
 
-// Load environment variables from local .env file
 dotenv.config();
 
 async function getRuntime(func) {

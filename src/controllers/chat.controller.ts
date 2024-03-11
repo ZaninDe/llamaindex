@@ -1,8 +1,6 @@
-import { streamToResponse } from "ai";
 import { Request, Response } from "express";
-import { ChatMessage, MessageContent, OpenAI, AudioTranscriptReader } from "llamaindex";
+import { ChatMessage, MessageContent, OpenAI } from "llamaindex";
 import { createChatEngine } from "./engine";
-import { LlamaIndexStream } from "./llamaindex-stream";
 
 const convertMessageContent = (
   textMessage: string,
@@ -40,13 +38,11 @@ export const chat = async (req: Request, res: Response) => {
 
     const chatEngine = await createChatEngine(llm);
 
-    // Convert message content from Vercel/AI format to LlamaIndex/OpenAI format
     const userMessageContent = convertMessageContent(
       userMessage.content,
       data?.imageUrl,
     );
 
-    // Calling LlamaIndex's ChatEngine to get a streamed response
     const response = await chatEngine.chat({
       message: userMessageContent,
       chatHistory: messages,
