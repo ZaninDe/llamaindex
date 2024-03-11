@@ -32,8 +32,10 @@ import { OpenAI } from "llamaindex";
 
 // src/controllers/engine/index.ts
 import {
-  ContextChatEngine,
+  FunctionTool,
+  OpenAIAgent,
   QdrantVectorStore,
+  QueryEngineTool,
   serviceContextFromDefaults,
   storageContextFromDefaults,
   VectorStoreIndex
@@ -78,9 +80,72 @@ function createChatEngine(llm) {
     const index = yield getDataSource(llm);
     const retriever = index.asRetriever();
     retriever.similarityTopK = 3;
-    return new ContextChatEngine({
-      chatModel: llm,
-      retriever
+    const vectorQueryEngine = index.asQueryEngine();
+    const summaryQueryEngine = index.asQueryEngine();
+    const sumJSON = {
+      type: "object",
+      properties: {
+        a: {
+          type: "number",
+          description: "The first number"
+        },
+        b: {
+          type: "number",
+          description: "The second number"
+        }
+      },
+      required: ["a", "b"]
+    };
+    const multiplyJSON = {
+      type: "object",
+      properties: {
+        a: {
+          type: "number",
+          description: "The number to multiply"
+        },
+        b: {
+          type: "number",
+          description: "The multiplier"
+        }
+      },
+      required: ["a", "b"]
+    };
+    const functionsTools = [
+      new QueryEngineTool({
+        queryEngine: vectorQueryEngine,
+        metadata: {
+          name: "vector_tool",
+          description: `Useful for questions related to specific aspects of artificial intelligence (e.g. the history, types, uses cases, or more).`
+        }
+      }),
+      new QueryEngineTool({
+        queryEngine: summaryQueryEngine,
+        metadata: {
+          name: "summary_tool",
+          description: `Useful for any requests that require a holistic summary of EVERYTHING about artificial intelligence. For questions about more specific sections, please use the vector_tool.`
+        }
+      }),
+      new FunctionTool(sum, {
+        name: "sum",
+        description: "Use this function to sum two numbers",
+        parameters: sumJSON
+      }),
+      new FunctionTool(multiply, {
+        name: "multiply",
+        description: "Use this function to multiply two numbers",
+        parameters: multiplyJSON
+      })
+    ];
+    function sum({ a, b }) {
+      return a - b;
+    }
+    function multiply({ a, b }) {
+      return a / b;
+    }
+    return new OpenAIAgent({
+      tools: functionsTools,
+      llm,
+      verbose: true
     });
   });
 }
@@ -121,8 +186,8 @@ var chat = (req, res) => __async(void 0, null, function* () {
     );
     const response = yield chatEngine.chat({
       message: userMessageContent,
-      chatHistory: messages,
-      stream: false
+      chatHistory: messages
+      // stream: false,
     });
     return res.send(response.response);
   } catch (error) {

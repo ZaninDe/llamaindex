@@ -46,8 +46,10 @@ export const chat = async (req: Request, res: Response) => {
     const response = await chatEngine.chat({
       message: userMessageContent,
       chatHistory: messages,
-      stream: false,
+      // stream: false,
     });
+
+
 
     return res.send(response.response)
   } catch (error) {
