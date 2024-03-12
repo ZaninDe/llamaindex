@@ -49,8 +49,6 @@ export const chat = async (req: Request, res: Response) => {
       // stream: false,
     });
 
-
-
     return res.send(response.response)
   } catch (error) {
     console.error("[LlamaIndex]", error);

@@ -28,7 +28,7 @@ import express2 from "express";
 import express from "express";
 
 // src/controllers/chat.controller.ts
-import { OpenAI } from "llamaindex";
+import { OpenAI as OpenAI2 } from "llamaindex";
 
 // src/controllers/engine/index.ts
 import {
@@ -47,6 +47,10 @@ var CHUNK_SIZE = 512;
 var CHUNK_OVERLAP = 20;
 
 // src/controllers/engine/index.ts
+import OpenAI from "openai";
+var openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 function getDataSource(llm) {
   return __async(this, null, function* () {
     const serviceContext = serviceContextFromDefaults({
@@ -80,6 +84,23 @@ function createChatEngine(llm) {
     const index = yield getDataSource(llm);
     const retriever = index.asRetriever();
     retriever.similarityTopK = 3;
+    function sum({ a, b }) {
+      return a - b;
+    }
+    function multiply({ a, b }) {
+      return a / b;
+    }
+    function generateImage(_0) {
+      return __async(this, arguments, function* ({ ctx }) {
+        const image = yield openai.images.generate({
+          model: "dall-e-3",
+          prompt: ctx,
+          style: "natural",
+          n: 1
+        });
+        return `${image.data[0].url}`;
+      });
+    }
     const vectorQueryEngine = index.asQueryEngine();
     const summaryQueryEngine = index.asQueryEngine();
     const sumJSON = {
@@ -110,6 +131,16 @@ function createChatEngine(llm) {
       },
       required: ["a", "b"]
     };
+    const generateImageJSON = {
+      type: "object",
+      properties: {
+        ctx: {
+          type: "string",
+          description: "The image description"
+        }
+      },
+      required: ["ctx"]
+    };
     const functionsTools = [
       new QueryEngineTool({
         queryEngine: vectorQueryEngine,
@@ -132,20 +163,25 @@ function createChatEngine(llm) {
       }),
       new FunctionTool(multiply, {
         name: "multiply",
-        description: "Use this function to multiply two numbers",
+        description: "Use this function ALWAYS to multiply two numbers",
         parameters: multiplyJSON
+      }),
+      new FunctionTool(generateImage, {
+        name: "generate_image",
+        description: "use this function whenever asked to generate an image, with have a link in answer, return only link without any text",
+        parameters: generateImageJSON
       })
     ];
-    function sum({ a, b }) {
-      return a - b;
-    }
-    function multiply({ a, b }) {
-      return a / b;
-    }
     return new OpenAIAgent({
       tools: functionsTools,
       llm,
-      verbose: true
+      verbose: true,
+      prefixMessages: [
+        {
+          content: "in cases where you are required to generate images, if the response contains a link starting with https://oaidalleapiprodscus return only just 'image_url:' followed by the link , no additional text, only message",
+          role: "system"
+        }
+      ]
     });
   });
 }
@@ -176,7 +212,7 @@ var chat = (req, res) => __async(void 0, null, function* () {
         error: "messages are required in the request body and the last message must be from the user"
       });
     }
-    const llm = new OpenAI({
+    const llm = new OpenAI2({
       model: process.env.MODEL || "gpt-3.5-turbo"
     });
     const chatEngine = yield createChatEngine(llm);

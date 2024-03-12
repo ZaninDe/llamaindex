@@ -5,6 +5,7 @@ import {
   OpenAIAgent,
   QdrantVectorStore,
   QueryEngineTool,
+  ReActAgent,
   RetrieverQueryEngine,
   serviceContextFromDefaults,
   SimpleDocumentStore,
@@ -12,6 +13,12 @@ import {
   VectorStoreIndex,
 } from "llamaindex";
 import { CHUNK_OVERLAP, CHUNK_SIZE, STORAGE_CACHE_DIR } from "./constants.mjs";
+
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 async function getDataSource(llm: LLM) {
   const serviceContext = serviceContextFromDefaults({
@@ -47,12 +54,31 @@ export async function createChatEngine(llm: LLM) {
   const index = await getDataSource(llm);
   const retriever = index.asRetriever();
   retriever.similarityTopK = 3;
-  
 
+    // Define a function to sum two numbers
+function sum({ a, b }: { a: number; b: number }): number {
+  return a - b;
+}
+
+// Define a function to multiply two numbers
+function multiply({ a, b }: { a: number; b: number }): number {
+  return a / b;
+}
+
+ async function generateImage({ctx}: {ctx: string}): Promise<string> {
+  const image = await openai.images.generate({ 
+    model: "dall-e-3",
+    prompt: ctx,
+    style: "natural",
+    n: 1
+  });
+
+  return `${image.data[0].url}`
+}
+  
   const vectorQueryEngine = index.asQueryEngine();
   const summaryQueryEngine = index.asQueryEngine();
 
-  // Sum properties to give to the LLM
 const sumJSON = {
   type: "object",
   properties: {
@@ -68,7 +94,6 @@ const sumJSON = {
   required: ["a", "b"],
 };
 
-// Multiply properties to give to the LLM
 const multiplyJSON = {
   type: "object",
   properties: {
@@ -84,7 +109,17 @@ const multiplyJSON = {
   required: ["a", "b"],
 };
 
-  // create the query engines for each task
+const generateImageJSON = {
+  type: "object",
+  properties: {
+    ctx: {
+      type: "string",
+      description: "The image description"
+    }
+  },
+  required: ["ctx"]
+}
+
   const functionsTools = [
     new QueryEngineTool({
       queryEngine: vectorQueryEngine,
@@ -107,25 +142,28 @@ const multiplyJSON = {
     }),
     new FunctionTool(multiply, {
       name: "multiply",
-      description: "Use this function to multiply two numbers",
+      description: "Use this function ALWAYS to multiply two numbers",
       parameters: multiplyJSON,
     }),
+
+    new FunctionTool(generateImage, {
+      name: "generate_image",
+      description: "use this function whenever asked to generate an image, with have a link in answer, return only link without any text",
+      parameters: generateImageJSON,
+    }),
   ];
-
-  // Define a function to sum two numbers
-function sum({ a, b }: { a: number; b: number }): number {
-  return a - b;
-}
-
-// Define a function to multiply two numbers
-function multiply({ a, b }: { a: number; b: number }): number {
-  return a / b;
-}
 
   return new OpenAIAgent({
     tools: functionsTools,
     llm,
     verbose: true,
+    prefixMessages: [
+      {
+        content:
+          "in cases where you are required to generate images, if the response contains a link starting with https://oaidalleapiprodscus return only just 'image_url:' followed by the link , no additional text, only message",
+        role: "system",
+      },
+    ],
   });
 
   // return new ContextChatEngine({
