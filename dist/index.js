@@ -48,6 +48,78 @@ var CHUNK_OVERLAP = 20;
 
 // src/controllers/engine/index.ts
 import OpenAI from "openai";
+
+// src/services/heygen.ts
+import axios from "axios";
+var heygenKey = process.env.HEYGEN_API_KEY || "";
+function generateVideoHeygen(_0) {
+  return __async(this, arguments, function* ({
+    inputText,
+    avatarId = "josh_lite_20230714",
+    voiceId = "1bd001e7e50f421d891986aad5158bc8"
+  }) {
+    var _a, _b;
+    const url = "https://api.heygen.com/v2/video/generate";
+    try {
+      const heygen_response = yield axios.post(
+        url,
+        {
+          "video_inputs": [
+            {
+              "character": {
+                "type": "avatar",
+                "avatar_id": avatarId,
+                "avatar_style": "normal"
+              },
+              "voice": {
+                "type": "text",
+                "input_text": inputText,
+                "voice_id": voiceId
+              }
+            }
+          ],
+          "test": true,
+          "caption": false,
+          "dimension": {
+            "width": 1920,
+            "height": 1080
+          }
+        },
+        {
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": heygenKey
+          }
+        }
+      );
+      console.log("HEYGEN RESPONSE: ", heygen_response);
+      console.dir((_a = heygen_response.data.data) == null ? void 0 : _a.video_id);
+      const videoId = (_b = heygen_response.data.data) == null ? void 0 : _b.video_id;
+      return videoId;
+    } catch (err) {
+      console.dir(err);
+    }
+  });
+}
+function retrieveVideoHeygen(videoId) {
+  return __async(this, null, function* () {
+    const url = `https://api.heygen.com/v1/video_status.get?video_id=${videoId}`;
+    try {
+      const response = yield axios.get(url, {
+        headers: {
+          "accept": "application/json",
+          "x-api-key": heygenKey
+        }
+      });
+      console.log("DATA; ", response.data);
+      return response.data;
+    } catch (err) {
+      console.log(err);
+    }
+  });
+}
+
+// src/controllers/engine/index.ts
 var openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
@@ -84,6 +156,8 @@ function createChatEngine(llm) {
     const index = yield getDataSource(llm);
     const retriever = index.asRetriever();
     retriever.similarityTopK = 3;
+    const vectorQueryEngine = index.asQueryEngine();
+    const summaryQueryEngine = index.asQueryEngine();
     function sum({ a, b }) {
       return a - b;
     }
@@ -101,8 +175,16 @@ function createChatEngine(llm) {
         return `${image.data[0].url}`;
       });
     }
-    const vectorQueryEngine = index.asQueryEngine();
-    const summaryQueryEngine = index.asQueryEngine();
+    function generateVideo(_0) {
+      return __async(this, arguments, function* ({ ctx }) {
+        const { response } = yield vectorQueryEngine.query({
+          query: ctx
+        });
+        const videoId = yield generateVideoHeygen({ inputText: response });
+        const urlVideo = yield retrieveVideoHeygen(videoId);
+        return String(urlVideo);
+      });
+    }
     const sumJSON = {
       type: "object",
       properties: {
@@ -141,6 +223,16 @@ function createChatEngine(llm) {
       },
       required: ["ctx"]
     };
+    const generateVideoJSON = {
+      type: "object",
+      properties: {
+        ctx: {
+          type: "string",
+          description: "The video description"
+        }
+      },
+      required: ["ctx"]
+    };
     const functionsTools = [
       new QueryEngineTool({
         queryEngine: vectorQueryEngine,
@@ -170,18 +262,24 @@ function createChatEngine(llm) {
         name: "generate_image",
         description: "use this function whenever asked to generate an image, with have a link in answer, return only link without any text",
         parameters: generateImageJSON
+      }),
+      new FunctionTool(generateVideo, {
+        name: "generate_video",
+        description: "use this function whenever asked Adilson to generate an video explain something",
+        parameters: generateImageJSON
       })
     ];
     return new OpenAIAgent({
       tools: functionsTools,
       llm,
-      verbose: true,
-      prefixMessages: [
-        {
-          content: "in cases where you are required to generate images, if the response contains a link starting with https://oaidalleapiprodscus return only just 'image_url:' followed by the link , no additional text, only message",
-          role: "system"
-        }
-      ]
+      verbose: true
+      // prefixMessages: [
+      //   {
+      //     content:
+      //       "in cases where you are required to generate images, if the response contains a link starts with https://oaidalleapiprodscus return only just 'image_url:' followed by the link , no additional text, only message",
+      //     role: "system",
+      //   },
+      // ],
     });
   });
 }

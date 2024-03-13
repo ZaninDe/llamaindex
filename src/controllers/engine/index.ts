@@ -15,9 +15,11 @@ import {
 import { CHUNK_OVERLAP, CHUNK_SIZE, STORAGE_CACHE_DIR } from "./constants.mjs";
 
 import OpenAI from "openai";
+import axios from "axios";
+import { generateVideoHeygen, retrieveVideoHeygen } from "../../services/heygen";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 async function getDataSource(llm: LLM) {
@@ -30,18 +32,18 @@ async function getDataSource(llm: LLM) {
   const vectorStore = new QdrantVectorStore({
     url: "http://localhost:6333",
   });
-  
+
   let storageContext = await storageContextFromDefaults({
     persistDir: `${STORAGE_CACHE_DIR}`,
-    vectorStore
+    vectorStore,
   });
 
   const numberOfDocs = Object.keys(
-    (storageContext.docStore as SimpleDocumentStore).toDict(),
+    (storageContext.docStore as SimpleDocumentStore).toDict()
   ).length;
   if (numberOfDocs === 0) {
     throw new Error(
-      `StorageContext is empty - call 'npm run generate' to generate the storage first`,
+      `StorageContext is empty - call 'npm run generate' to generate the storage first`
     );
   }
   return await VectorStoreIndex.init({
@@ -55,70 +57,93 @@ export async function createChatEngine(llm: LLM) {
   const retriever = index.asRetriever();
   retriever.similarityTopK = 3;
 
-    // Define a function to sum two numbers
-function sum({ a, b }: { a: number; b: number }): number {
-  return a - b;
-}
-
-// Define a function to multiply two numbers
-function multiply({ a, b }: { a: number; b: number }): number {
-  return a / b;
-}
-
- async function generateImage({ctx}: {ctx: string}): Promise<string> {
-  const image = await openai.images.generate({ 
-    model: "dall-e-3",
-    prompt: ctx,
-    style: "natural",
-    n: 1
-  });
-
-  return `${image.data[0].url}`
-}
-  
   const vectorQueryEngine = index.asQueryEngine();
   const summaryQueryEngine = index.asQueryEngine();
+  
 
-const sumJSON = {
-  type: "object",
-  properties: {
-    a: {
-      type: "number",
-      description: "The first number",
-    },
-    b: {
-      type: "number",
-      description: "The second number",
-    },
-  },
-  required: ["a", "b"],
-};
+  // Define a function to sum two numbers
+  function sum({ a, b }: { a: number; b: number }): number {
+    return a - b;
+  }
 
-const multiplyJSON = {
-  type: "object",
-  properties: {
-    a: {
-      type: "number",
-      description: "The number to multiply",
-    },
-    b: {
-      type: "number",
-      description: "The multiplier",
-    },
-  },
-  required: ["a", "b"],
-};
+  // Define a function to multiply two numbers
+  function multiply({ a, b }: { a: number; b: number }): number {
+    return a / b;
+  }
 
-const generateImageJSON = {
-  type: "object",
-  properties: {
-    ctx: {
-      type: "string",
-      description: "The image description"
-    }
-  },
-  required: ["ctx"]
-}
+  async function generateImage({ ctx }: { ctx: string }): Promise<string> {
+    const image = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: ctx,
+      style: "natural",
+      n: 1,
+    });
+
+    return `${image.data[0].url}`;
+  }
+
+  async function generateVideo({ ctx }: { ctx: string }): Promise<string> {
+    const { response } = await vectorQueryEngine.query({
+      query: ctx,
+    });
+
+    const videoId  = await generateVideoHeygen({inputText: response})
+    const urlVideo = await retrieveVideoHeygen(videoId)
+
+    return String(urlVideo);
+  }
+  
+  const sumJSON = {
+    type: "object",
+    properties: {
+      a: {
+        type: "number",
+        description: "The first number",
+      },
+      b: {
+        type: "number",
+        description: "The second number",
+      },
+    },
+    required: ["a", "b"],
+  };
+
+  const multiplyJSON = {
+    type: "object",
+    properties: {
+      a: {
+        type: "number",
+        description: "The number to multiply",
+      },
+      b: {
+        type: "number",
+        description: "The multiplier",
+      },
+    },
+    required: ["a", "b"],
+  };
+
+  const generateImageJSON = {
+    type: "object",
+    properties: {
+      ctx: {
+        type: "string",
+        description: "The image description",
+      },
+    },
+    required: ["ctx"],
+  };
+
+  const generateVideoJSON = {
+    type: "object",
+    properties: {
+      ctx: {
+        type: "string",
+        description: "The video description",
+      },
+    },
+    required: ["ctx"],
+  };
 
   const functionsTools = [
     new QueryEngineTool({
@@ -148,7 +173,14 @@ const generateImageJSON = {
 
     new FunctionTool(generateImage, {
       name: "generate_image",
-      description: "use this function whenever asked to generate an image, with have a link in answer, return only link without any text",
+      description:
+        "use this function whenever asked to generate an image, with have a link in answer, return only link without any text",
+      parameters: generateImageJSON,
+    }),
+    new FunctionTool(generateVideo, {
+      name: "generate_video",
+      description:
+        "use this function whenever asked Adilson to generate an video explain something",
       parameters: generateImageJSON,
     }),
   ];
@@ -157,13 +189,13 @@ const generateImageJSON = {
     tools: functionsTools,
     llm,
     verbose: true,
-    prefixMessages: [
-      {
-        content:
-          "in cases where you are required to generate images, if the response contains a link starting with https://oaidalleapiprodscus return only just 'image_url:' followed by the link , no additional text, only message",
-        role: "system",
-      },
-    ],
+    // prefixMessages: [
+    //   {
+    //     content:
+    //       "in cases where you are required to generate images, if the response contains a link starts with https://oaidalleapiprodscus return only just 'image_url:' followed by the link , no additional text, only message",
+    //     role: "system",
+    //   },
+    // ],
   });
 
   // return new ContextChatEngine({
